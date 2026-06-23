@@ -1,0 +1,11 @@
+{
+  "name": "news-api",
+  "version": "1.0.0",
+  "description": "新闻查询API云函数 - 供客户端实时搜索和缓存查询",
+  "main": "index.js",
+  "dependencies": {},
+  "cloudfunction-config": {
+    "memorySize": 256,
+    "timeout": 30
+  }
+}

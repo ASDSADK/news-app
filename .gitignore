@@ -1,0 +1,22 @@
+# HBuilderX
+unpackage/
+.hbuilderx/
+
+# uniCloud
+uniCloud-aliyun/.env
+
+# Dependencies
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log

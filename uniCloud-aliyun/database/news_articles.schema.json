@@ -1,0 +1,70 @@
+{
+  "bsonType": "object",
+  "required": ["title", "link", "keyword"],
+  "permission": {
+    "read": true,
+    "create": false,
+    "update": false,
+    "delete": false
+  },
+  "properties": {
+    "_id": {
+      "bsonType": "string",
+      "description": "记录ID，系统自动生成"
+    },
+    "title": {
+      "bsonType": "string",
+      "description": "新闻标题",
+      "title": "标题",
+      "trim": "both"
+    },
+    "link": {
+      "bsonType": "string",
+      "description": "新闻原文链接（用于去重）",
+      "title": "链接",
+      "trim": "both"
+    },
+    "pubDate": {
+      "bsonType": "string",
+      "description": "发布时间",
+      "title": "发布时间"
+    },
+    "source": {
+      "bsonType": "string",
+      "description": "新闻来源名称",
+      "title": "来源",
+      "trim": "both"
+    },
+    "description": {
+      "bsonType": "string",
+      "description": "新闻摘要",
+      "title": "摘要"
+    },
+    "keyword": {
+      "bsonType": "string",
+      "description": "搜索关键词",
+      "title": "关键词",
+      "trim": "both"
+    },
+    "fetchedAt": {
+      "bsonType": "string",
+      "description": "抓取时间",
+      "title": "抓取时间"
+    },
+    "createdAt": {
+      "bsonType": "string",
+      "description": "入库时间",
+      "title": "创建时间"
+    }
+  },
+  "index": [
+    {
+      "IndexName": "idx_link",
+      "MgoKeySchema": { "MgoIndexKeys": [{ "Name": "link", "Direction": "1" }], "MgoIsUnique": true }
+    },
+    {
+      "IndexName": "idx_keyword",
+      "MgoKeySchema": { "MgoIndexKeys": [{ "Name": "keyword", "Direction": "1" }, { "Name": "fetchedAt", "Direction": "-1" }], "MgoIsUnique": false }
+    }
+  ]
+}

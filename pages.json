@@ -1,0 +1,35 @@
+{
+    "pages": [
+        {
+            "path": "pages/index/index",
+            "style": {
+                "navigationStyle": "custom",
+                "backgroundColor": "#f5f5f7",
+                "disableScroll": true
+            }
+        },
+        {
+            "path": "pages/detail/detail",
+            "style": {
+                "navigationBarTitleText": "新闻详情",
+                "navigationBarBackgroundColor": "#4d6bfe",
+                "navigationBarTextStyle": "white"
+            }
+        },
+        {
+            "path": "pages/privacy/privacy",
+            "style": {
+                "navigationBarTitleText": "隐私政策",
+                "navigationBarBackgroundColor": "#4d6bfe",
+                "navigationBarTextStyle": "white"
+            }
+        }
+    ],
+    "globalStyle": {
+        "navigationBarTextStyle": "white",
+        "navigationBarTitleText": "新闻速递",
+        "navigationBarBackgroundColor": "#4d6bfe",
+        "backgroundColor": "#f5f5f7"
+    },
+    "uniIdRouter": {}
+}

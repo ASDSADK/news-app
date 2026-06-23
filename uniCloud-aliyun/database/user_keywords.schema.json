@@ -1,0 +1,44 @@
+{
+  "bsonType": "object",
+  "required": ["keyword"],
+  "permission": {
+    "read": true,
+    "create": true,
+    "update": true,
+    "delete": true
+  },
+  "properties": {
+    "_id": {
+      "bsonType": "string",
+      "description": "记录ID，系统自动生成"
+    },
+    "keyword": {
+      "bsonType": "string",
+      "description": "追踪关键词",
+      "title": "关键词",
+      "trim": "both"
+    },
+    "active": {
+      "bsonType": "bool",
+      "description": "是否启用追踪",
+      "title": "启用",
+      "defaultValue": true
+    },
+    "lastFetchedAt": {
+      "bsonType": "string",
+      "description": "最后抓取时间",
+      "title": "最后抓取"
+    },
+    "createdAt": {
+      "bsonType": "string",
+      "description": "创建时间",
+      "title": "创建时间"
+    }
+  },
+  "index": [
+    {
+      "IndexName": "idx_keyword_active",
+      "MgoKeySchema": { "MgoIndexKeys": [{ "Name": "keyword", "Direction": "1" }, { "Name": "active", "Direction": "1" }], "MgoIsUnique": false }
+    }
+  ]
+}
