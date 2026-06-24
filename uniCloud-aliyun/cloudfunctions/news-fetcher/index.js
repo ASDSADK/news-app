@@ -81,34 +81,51 @@ exports.main = async (event, context) => {
 
 /**
  * 抓取单个关键词的新闻
- * 策略：Google News RSS → 东方财富 → 网易 → 新浪 → 人民网 → GNews
+ * 策略（国内可用）：人民网 → 新浪 → 36氪 → Google(境外)
  */
 async function fetchNewsForKeyword(keyword) {
   const sources = [
-    { name: 'Google RSS', fn: fetchGoogleRSS },
-    { name: '东方财富', fn: fetchEastMoney },
-    { name: '网易新闻', fn: fetchNetease },
-    { name: '新浪新闻', fn: fetchSina },
-    { name: '人民网', fn: fetchPeople },
-    { name: 'GNews', fn: fetchGNews }
+    { name: '人民网', fn: fetchPeopleRSS },
+    { name: '人民网财经', fn: fetchPeopleFinance },
+    { name: '新浪新闻', fn: fetchSinaNews },
+    { name: '36氪', fn: fetch36Kr },
+    { name: 'Google News', fn: fetchGoogleRSS }
   ]
 
-  for (const src of sources) {
-    try {
-      console.log(`[fetch] ${src.name} → "${keyword}"`)
-      const articles = await src.fn(keyword)
-      if (articles.length > 0) {
-        articles.forEach(a => a.sourceKey = src.name)
-        console.log(`[fetch] ${src.name} 成功: ${articles.length} 条`)
-        return articles
+  // 并发请求所有源
+  const allArticles = []
+  const results = await Promise.allSettled(
+    sources.map(async (src) => {
+      try {
+        const articles = await src.fn(keyword)
+        if (articles.length > 0) {
+          articles.forEach(a => a.sourceKey = src.name)
+          return articles
+        }
+      } catch (e) {
+        console.warn(`[fetch] ${src.name} 失败: ${e.message}`)
       }
-    } catch (err) {
-      console.warn(`[fetch] ${src.name} 失败: ${err.message}`)
+      return []
+    })
+  )
+
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value.length > 0) {
+      allArticles.push(...r.value)
     }
-    await sleep(500)
   }
 
-  return []
+  // 去重 + 排序
+  const seen = new Set()
+  const unique = allArticles.filter(a => {
+    if (seen.has(a.link)) return false
+    seen.add(a.link)
+    return true
+  })
+  unique.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
+
+  console.log(`[fetch] 总结果: ${unique.length} 条 (${allArticles.length} 原始)`)
+  return unique
 }
 
 /**
@@ -293,67 +310,39 @@ function sleep(ms) {
 }
 
 // ============================================================
-// 东方财富 RSS
+// 国内可用的 RSS 源
 // ============================================================
-async function fetchEastMoney(keyword) {
-  const url = 'https://rss.eastmoney.com/'
-  const res = await uniCloud.httpclient.request(url, {
-    method: 'GET',
-    timeout: 15000,
-    dataType: 'text'
-  })
-  if (res.statusCode !== 200 || !res.data) return []
-  const allArticles = parseGoogleRSS(res.data, keyword)
-  return allArticles.filter(a =>
-    a.title.includes(keyword) || (a.description || '').includes(keyword)
-  ).slice(0, 30)
+
+async function fetchPeopleRSS(keyword) {
+  return await fetchAndFilter('http://www.people.com.cn/rss/politics.xml', keyword)
 }
 
-// ============================================================
-// 网易新闻（通过 Google News 限定 site）
-// ============================================================
-async function fetchNetease(keyword) {
-  const query = `${keyword} site:163.com`
-  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`
-  const res = await uniCloud.httpclient.request(url, {
-    method: 'GET',
-    timeout: 15000,
-    dataType: 'text',
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsApp/1.0)' }
-  })
-  if (res.statusCode !== 200 || !res.data) return []
-  return parseGoogleRSS(res.data, keyword)
+async function fetchPeopleFinance(keyword) {
+  return await fetchAndFilter('http://finance.people.com.cn/rss/finance.xml', keyword)
 }
 
-// ============================================================
-// 新浪新闻（通过 Google News 限定 site）
-// ============================================================
-async function fetchSina(keyword) {
-  const query = `${keyword} site:sina.com.cn`
-  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`
-  const res = await uniCloud.httpclient.request(url, {
-    method: 'GET',
-    timeout: 15000,
-    dataType: 'text',
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsApp/1.0)' }
-  })
-  if (res.statusCode !== 200 || !res.data) return []
-  return parseGoogleRSS(res.data, keyword)
+async function fetchSinaNews(keyword) {
+  return await fetchAndFilter('https://rss.sina.com.cn/news/marquee/ddt.xml', keyword)
 }
 
-// ============================================================
-// 人民网 RSS
-// ============================================================
-async function fetchPeople(keyword) {
-  const url = 'http://www.people.com.cn/rss/politics.xml'
-  const res = await uniCloud.httpclient.request(url, {
-    method: 'GET',
-    timeout: 15000,
-    dataType: 'text'
-  })
-  if (res.statusCode !== 200 || !res.data) return []
-  const allArticles = parseGoogleRSS(res.data, keyword)
-  return allArticles.filter(a =>
-    a.title.includes(keyword) || (a.description || '').includes(keyword)
-  ).slice(0, 20)
+async function fetch36Kr(keyword) {
+  return await fetchAndFilter('https://36kr.com/feed', keyword)
+}
+
+async function fetchAndFilter(url, keyword) {
+  try {
+    const res = await uniCloud.httpclient.request(url, {
+      method: 'GET',
+      timeout: 15000,
+      dataType: 'text',
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NewsApp/1.0)' }
+    })
+    if (res.statusCode !== 200 || !res.data) return []
+    const allArticles = parseGoogleRSS(res.data, keyword)
+    return allArticles.filter(a =>
+      (a.title || '').includes(keyword) || (a.description || '').includes(keyword)
+    ).slice(0, 30)
+  } catch (e) {
+    return []
+  }
 }

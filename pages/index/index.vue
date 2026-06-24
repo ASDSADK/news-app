@@ -183,7 +183,7 @@
 </template>
 
 <script>
-import { fetchAllSources, getSources, getEnabledSources } from '@/utils/api.js'
+import { fetchAllSources, fetchViaCloud, getSources, getEnabledSources } from '@/utils/api.js'
 
 export default {
   data() {
@@ -286,16 +286,26 @@ export default {
       const conv = this.conversations.find(c => c.keyword === keyword)
       if (!conv) return
 
-      // 多源聚合获取
-      const result = await fetchAllSources(keyword, this.selectedSources)
+      let result = { articles: [], sources: [] }
+
+      // 优先通过云函数搜索（精准关键词 + RSS聚合）
+      try {
+        result = await fetchViaCloud(keyword)
+      } catch (e) {
+        console.warn('云函数搜索失败，降级到本地RSS:', e.message)
+      }
+
+      // 云函数无结果时降级到本地 RSS 直连
+      if (result.articles.length === 0) {
+        result = await fetchAllSources(keyword, this.selectedSources)
+      }
 
       if (result.articles.length > 0) {
-        const sourceNames = result.sources.map(k => this.sources[k]?.label || k)
-        conv.source = sourceNames.join(' + ')
+        conv.source = result.source || result.sources.map(k => this.sources[k]?.label || k).join(' + ')
         this.updateConvWithArticles(conv, result.articles)
       } else {
         conv.loading = false
-        uni.showToast({ title: '获取失败，请检查网络', icon: 'none' })
+        uni.showToast({ title: '未找到相关新闻，换个关键词试试', icon: 'none' })
         this.saveConversations()
       }
     },
@@ -316,6 +326,7 @@ export default {
     // ========== 自动刷新 ==========
     async autoRefresh() {
       if (!this.activeKeyword) return
+      // 定时刷新只用免费RSS，不消耗天行数据额度
       const result = await fetchAllSources(this.activeKeyword, this.selectedSources)
       if (result.articles.length > 0) {
         const conv = this.conversations.find(c => c.keyword === this.activeKeyword)
@@ -324,8 +335,7 @@ export default {
           conv.allNews = result.articles
           conv.hasMore = result.articles.length > this.pageSize
           conv.displayArticles = result.articles.slice(0, this.pageSize)
-          const sourceNames = result.sources.map(k => this.sources[k]?.label || k)
-          conv.source = sourceNames.join(' + ')
+          conv.source = result.source || result.sources.map(k => this.sources[k]?.label || k).join(' + ')
           this.updateNextRefreshTime()
           this.saveConversations()
         }
