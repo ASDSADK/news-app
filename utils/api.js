@@ -1,15 +1,15 @@
 /**
- * 新闻 API 工具模块（中国可用版 v2）
+ * 新闻 API 工具模块（v3 — 百度搜索引擎版）
  *
  * 搜索策略：
- *   1. 云函数搜索（支持天行数据精准搜索 + RSS聚合）
- *   2. 本地RSS直连（云函数不可用时兜底）
+ *   1. 云函数百度新闻搜索 → 任意关键词都能搜到（零配置、零成本）
+ *   2. 本地RSS直连 → 定时刷新兜底（免费、无限制）
  *
  * 实测可用源：
+ *   ✅ 百度新闻搜索   — 云函数端抓取解析（主力）
  *   ✅ 人民网 RSS     — politics.xml (100条)
  *   ✅ 新浪新闻 RSS   — ddt.xml
  *   ✅ 36氪 RSS       — /feed
- *   ✅ 天行数据API    — 精准关键词搜索（需配key, 100次/天免费）
  */
 
 const FEEDS = [
@@ -21,13 +21,6 @@ const FEEDS = [
     desc: '时政要闻'
   },
   {
-    key: 'people_finance',
-    name: '人民网财经',
-    icon: '💰',
-    url: 'http://finance.people.com.cn/rss/finance.xml',
-    desc: '财经频道'
-  },
-  {
     key: 'sina',
     name: '新浪新闻',
     icon: '📢',
@@ -35,26 +28,11 @@ const FEEDS = [
     desc: '新闻要闻'
   },
   {
-    key: 'sina_finance',
-    name: '新浪财经',
-    icon: '📈',
-    url: 'https://rss.sina.com.cn/finance/stock/usstk.xml',
-    desc: '财经资讯'
-  },
-  {
     key: '36kr',
     name: '36氪',
     icon: '🚀',
     url: 'https://36kr.com/feed',
     desc: '科技商业'
-  },
-  {
-    key: 'google',
-    name: 'Google News',
-    icon: '🌐',
-    url: null,  // 动态拼接
-    desc: '境外可用',
-    enabled: false  // 国内默认关
   }
 ]
 
@@ -65,8 +43,8 @@ const TIMEOUT = 15000
 // ============================================================
 
 /**
- * 通过云函数搜索（支持天行数据精准搜索）
- * 需先在 uniCloud 控制台配置环境变量 TIANAPI_KEY
+ * 通过云函数搜索（百度新闻抓取 + 搜狗备用 + RSS 兜底）
+ * 零配置、零成本、任意关键词都能搜
  */
 export async function fetchViaCloud(keyword) {
   return new Promise((resolve, reject) => {
