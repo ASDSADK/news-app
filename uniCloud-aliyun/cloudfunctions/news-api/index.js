@@ -92,25 +92,25 @@ async function searchNews(keyword, page, pageSize) {
     return true
   })
 
-  // 4. 豆包 AI 兜底（搜索结果为空时）
+  // 4. AI 智能兜底（搜索结果为空时）
   if (unique.length === 0) {
     try {
       const aiResult = await askAI(keyword)
-      if (aiResult) {
+      if (aiResult && aiResult.text) {
         unique.push({
           title: `AI 智能回答: ${keyword}`,
           link: '',
           pubDate: new Date().toISOString(),
-          source: '豆包AI',
-          description: aiResult,
+          source: aiResult.source,
+          description: aiResult.text,
           keyword,
-          sourceName: '豆包AI',
+          sourceName: aiResult.source,
           isAI: true
         })
-        source = '豆包AI'
+        source = aiResult.source
       }
     } catch (e) {
-      console.warn('[豆包] 失败:', e.message)
+      console.warn('[AI] 失败:', e.message)
     }
   }
 
@@ -484,47 +484,71 @@ function sleep(ms) {
 }
 
 // ============================================================
-// 豆包 AI 兜底（搜索结果为空时调用）
-// API key 在 uniCloud 环境变量中配置：DOUBAO_API_KEY
-// 获取地址：https://console.volcengine.com/ark/region:ark+cn-beijing/model
+// AI 智能兜底（搜索结果为空时调用）
+//
+// 支持的 AI 服务（按优先级）：
+//   1. DeepSeek — 环境变量 DEEPSEEK_API_KEY
+//      https://platform.deepseek.com/api_keys
+//   2. 豆包    — 环境变量 DOUBAO_API_KEY
+//      https://console.volcengine.com/ark
 // ============================================================
 
+const AI_PROVIDERS = [
+  {
+    name: 'DeepSeek',
+    envKey: 'DEEPSEEK_API_KEY',
+    endpoint: 'https://api.deepseek.com/chat/completions',
+    model: 'deepseek-chat',
+    sourceName: 'DeepSeek AI'
+  },
+  {
+    name: '豆包',
+    envKey: 'DOUBAO_API_KEY',
+    endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+    model: 'doubao-lite-32k',
+    sourceName: '豆包AI'
+  }
+]
+
 async function askAI(keyword) {
-  const apiKey = process.env.DOUBAO_API_KEY || ''
-  if (!apiKey) return null
+  for (const provider of AI_PROVIDERS) {
+    const apiKey = process.env[provider.envKey] || ''
+    if (!apiKey) continue
 
-  const res = await uniCloud.httpclient.request(
-    'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
-    {
-      method: 'POST',
-      timeout: 30000,
-      dataType: 'json',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      data: {
-        model: 'doubao-lite-32k',
-        messages: [
-          {
+    try {
+      const res = await uniCloud.httpclient.request(provider.endpoint, {
+        method: 'POST',
+        timeout: 30000,
+        dataType: 'json',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        data: {
+          model: provider.model,
+          messages: [{
             role: 'user',
-            content: `请帮我搜索关于"${keyword}"的最新信息，简要列出：
-1. 最新动态或新闻
-2. 关键数据或事实
-3. 相关背景
-请用中文回答，控制在500字以内，不要编造信息。`
-          }
-        ],
-        max_tokens: 800,
-        temperature: 0.3
-      }
-    }
-  )
+            content: `请帮我搜索关于"${keyword}"的最新信息，简要列出：\n1. 最新动态或新闻\n2. 关键数据或事实\n3. 相关背景\n请用中文回答，控制在500字以内，不要编造信息。`
+          }],
+          max_tokens: 800,
+          temperature: 0.3
+        }
+      })
 
-  if (res.statusCode === 200 && res.data?.choices?.length > 0) {
-    return res.data.choices[0].message?.content?.trim() || null
+      if (res.statusCode === 200 && res.data?.choices?.length > 0) {
+        console.log(`[AI] ${provider.name} 返回结果`)
+        return {
+          text: res.data.choices[0].message?.content?.trim() || '',
+          source: provider.sourceName
+        }
+      }
+      console.warn(`[AI] ${provider.name} 异常: HTTP ${res.statusCode}`)
+
+    } catch (e) {
+      console.warn(`[AI] ${provider.name} 失败:`, e.message)
+    }
   }
 
-  console.warn('[豆包] API 返回异常:', res.statusCode)
+  console.warn('[AI] 无可用 AI 服务（未配置 API key）')
   return null
 }

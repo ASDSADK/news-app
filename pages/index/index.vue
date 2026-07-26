@@ -110,7 +110,7 @@
                 <view v-if="item.isAI" class="ai-card">
                   <view class="ai-header">
                     <text class="ai-icon">🤖</text>
-                    <text class="ai-label">豆包AI 智能回答</text>
+                    <text class="ai-label">{{ item.sourceName || 'AI' }} 智能回答</text>
                     <text class="card-time">{{ formatTime(item.pubDate) }}</text>
                   </view>
                   <text class="ai-content">{{ item.description }}</text>
