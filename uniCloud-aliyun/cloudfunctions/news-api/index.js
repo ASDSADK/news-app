@@ -1,10 +1,11 @@
 /**
  * 新闻搜索云函数 - news-api
  *
- * 搜索策略（全免费、零配置）：
- *   1. 百度新闻搜索 → 云函数端抓取解析（主力，任何关键词都能搜）
+ * 搜索策略：
+ *   1. 百度新闻搜索 → 云函数端抓取解析（主力）
  *   2. 搜狗新闻搜索 → 备用抓取
  *   3. RSS 聚合 → 人民网/新浪/36氪（兜底）
+ *   4. 豆包AI → 搜索无结果时智能回答（需配置 API key）
  */
 
 'use strict'
@@ -25,6 +26,8 @@ exports.main = async (event, context) => {
       return await removeKeyword(keyword)
     case 'getKeywords':
       return await getKeywords()
+    case 'askAI':
+      return await askAI(keyword)
     default:
       return { code: 400, message: '未知操作: ' + action }
   }
@@ -88,6 +91,28 @@ async function searchNews(keyword, page, pageSize) {
     seen.add(a.link)
     return true
   })
+
+  // 4. 豆包 AI 兜底（搜索结果为空时）
+  if (unique.length === 0) {
+    try {
+      const aiResult = await askAI(keyword)
+      if (aiResult) {
+        unique.push({
+          title: `AI 智能回答: ${keyword}`,
+          link: '',
+          pubDate: new Date().toISOString(),
+          source: '豆包AI',
+          description: aiResult,
+          keyword,
+          sourceName: '豆包AI',
+          isAI: true
+        })
+        source = '豆包AI'
+      }
+    } catch (e) {
+      console.warn('[豆包] 失败:', e.message)
+    }
+  }
 
   // 分页
   const start = (page - 1) * pageSize
@@ -456,4 +481,50 @@ function extractDomain(url) {
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// ============================================================
+// 豆包 AI 兜底（搜索结果为空时调用）
+// API key 在 uniCloud 环境变量中配置：DOUBAO_API_KEY
+// 获取地址：https://console.volcengine.com/ark/region:ark+cn-beijing/model
+// ============================================================
+
+async function askAI(keyword) {
+  const apiKey = process.env.DOUBAO_API_KEY || ''
+  if (!apiKey) return null
+
+  const res = await uniCloud.httpclient.request(
+    'https://ark.cn-beijing.volces.com/api/v3/chat/completions',
+    {
+      method: 'POST',
+      timeout: 30000,
+      dataType: 'json',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      data: {
+        model: 'doubao-lite-32k',
+        messages: [
+          {
+            role: 'user',
+            content: `请帮我搜索关于"${keyword}"的最新信息，简要列出：
+1. 最新动态或新闻
+2. 关键数据或事实
+3. 相关背景
+请用中文回答，控制在500字以内，不要编造信息。`
+          }
+        ],
+        max_tokens: 800,
+        temperature: 0.3
+      }
+    }
+  )
+
+  if (res.statusCode === 200 && res.data?.choices?.length > 0) {
+    return res.data.choices[0].message?.content?.trim() || null
+  }
+
+  console.warn('[豆包] API 返回异常:', res.statusCode)
+  return null
 }

@@ -104,8 +104,20 @@
                 class="news-card"
                 v-for="(item, nIdx) in conv.displayArticles"
                 :key="nIdx"
-                @click="openDetail(item)"
+                @click="item.isAI ? null : openDetail(item)"
               >
+                <!-- AI 回答卡片 -->
+                <view v-if="item.isAI" class="ai-card">
+                  <view class="ai-header">
+                    <text class="ai-icon">🤖</text>
+                    <text class="ai-label">豆包AI 智能回答</text>
+                    <text class="card-time">{{ formatTime(item.pubDate) }}</text>
+                  </view>
+                  <text class="ai-content">{{ item.description }}</text>
+                  <text class="ai-disclaimer">内容由AI生成，仅供参考</text>
+                </view>
+                <!-- 普通新闻卡片 -->
+                <template v-else>
                 <view class="card-header">
                   <view class="card-header-left">
                     <text class="card-source">{{ item.source || '未知来源' }}</text>
@@ -119,6 +131,7 @@
                   <text class="card-link">{{ item.link }}</text>
                   <text class="card-action">查看详情 →</text>
                 </view>
+                </template>
               </view>
 
               <!-- 加载更多 -->
@@ -1014,5 +1027,39 @@ export default {
   background: #4d6bfe;
   padding: 2rpx 10rpx;
   border-radius: 6rpx;
+}
+
+/* ========== AI 回答卡片 ========== */
+.ai-card {
+  padding: 8rpx 0;
+}
+.ai-header {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-bottom: 20rpx;
+}
+.ai-icon {
+  font-size: 32rpx;
+}
+.ai-label {
+  flex: 1;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #e67e22;
+}
+.ai-content {
+  font-size: 28rpx;
+  color: #444;
+  line-height: 1.8;
+  display: block;
+  white-space: pre-wrap;
+}
+.ai-disclaimer {
+  display: block;
+  margin-top: 20rpx;
+  font-size: 20rpx;
+  color: #ccc;
+  text-align: center;
 }
 </style>
