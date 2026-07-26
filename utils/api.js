@@ -39,6 +39,12 @@ const FEEDS = [
 const TIMEOUT = 15000
 
 // ============================================================
+// DeepSeek API Key（本地调试用，生产环境请用云函数环境变量）
+// 在此处填入你的 key 即可本地测试：sk-xxxxxxxxxxxxxxxx
+// ============================================================
+let LOCAL_DEEPSEEK_KEY = ''
+
+// ============================================================
 // 云函数搜索（精准关键词 + RSS 聚合）
 // ============================================================
 
@@ -273,4 +279,8 @@ export function cleanTitle(title) {
   return title.replace(/\s*[-—|]\s*[^\-—|]+$/, '').trim()
 }
 
-export default { fetchAllSources, getSources, getEnabledSources, formatPubTime, cleanTitle }
+export function setDeepSeekKey(key) {
+  LOCAL_DEEPSEEK_KEY = key
+}
+
+export default { fetchAllSources, getSources, getEnabledSources, formatPubTime, cleanTitle, setDeepSeekKey }
