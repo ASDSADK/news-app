@@ -7,7 +7,7 @@
         <text class="header-title">新闻速递</text>
       </view>
       <view class="header-right">
-        <text class="header-badge" v-if="activeKeyword">追踪中</text>
+        <text class="header-badge" v-if="activeKeyword && isFetching" @click="stopAllTracking">追踪中 · 点击停止</text>
         <text class="header-icon" @click="showHistory = !showHistory">☰</text>
       </view>
     </view>
@@ -90,6 +90,7 @@
                 <view class="dot"></view>
               </view>
               <text class="loading-text">正在搜索「{{ conv.keyword }}」相关新闻...</text>
+              <text class="cancel-search" @click.stop="cancelSearch(conv.keyword)">取消</text>
             </view>
 
             <!-- 新闻列表 -->
@@ -197,6 +198,7 @@ export default {
       showHistory: false,
       scrollToId: '',
       sourceUsed: '',
+      cancelToken: null,
       // 新闻源
       sources: {},
       selectedSources: [],
@@ -295,9 +297,21 @@ export default {
         console.warn('云函数搜索失败，降级到本地RSS:', e.message)
       }
 
+      // 检查是否已取消
+      if (this.cancelToken === keyword) {
+        this.cancelToken = null
+        return
+      }
+
       // 云函数无结果时降级到本地 RSS 直连
       if (result.articles.length === 0) {
         result = await fetchAllSources(keyword, this.selectedSources)
+      }
+
+      // 再次检查是否已取消
+      if (this.cancelToken === keyword) {
+        this.cancelToken = null
+        return
       }
 
       if (result.articles.length > 0) {
@@ -449,6 +463,15 @@ export default {
       } else {
         this.selectedSources.push(key)
       }
+    },
+
+    cancelSearch(keyword) {
+      this.cancelToken = keyword
+      const conv = this.conversations.find(c => c.keyword === keyword)
+      if (conv) {
+        conv.loading = false
+      }
+      this.isLoading = false
     },
 
     scrollToBottom() {
@@ -756,6 +779,14 @@ export default {
 .loading-text {
   font-size: 24rpx;
   color: #aaa;
+}
+.cancel-search {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: #ff4757;
+  padding: 8rpx 28rpx;
+  border: 2rpx solid #ff4757;
+  border-radius: 24rpx;
 }
 
 /* ========== 新闻卡片 ========== */
