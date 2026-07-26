@@ -23,6 +23,14 @@
                 "navigationBarBackgroundColor": "#4d6bfe",
                 "navigationBarTextStyle": "white"
             }
+        },
+        {
+            "path": "pages/aiweb/aiweb",
+            "style": {
+                "navigationBarTitleText": "AI 智能问答",
+                "navigationBarBackgroundColor": "#4d6bfe",
+                "navigationBarTextStyle": "white"
+            }
         }
     ],
     "globalStyle": {

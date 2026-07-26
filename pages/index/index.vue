@@ -134,6 +134,21 @@
                 </template>
               </view>
 
+              <!-- 搜索无结果 → AI 网页版兜底 -->
+              <view class="empty-result" v-if="!conv.loading && conv.articles.length === 0 && !conv.hasAI">
+                <text class="empty-emoji">🔍</text>
+                <text class="empty-msg">未搜索到「{{ conv.keyword }}」的新闻</text>
+                <text class="empty-sub">试试用AI帮你找：</text>
+                <view class="ai-web-btns">
+                  <view class="ai-web-btn deepseek" @click="openAIWeb(conv.keyword, 'deepseek')">
+                    <text>🧠 DeepSeek</text>
+                  </view>
+                  <view class="ai-web-btn doubao" @click="openAIWeb(conv.keyword, 'doubao')">
+                    <text>💬 豆包</text>
+                  </view>
+                </view>
+              </view>
+
               <!-- 加载更多 -->
               <view class="more-btn" v-if="conv.hasMore" @click="loadMoreForConv(cIdx)">
                 <text>{{ conv.loadingMore ? '加载中...' : `查看全部 ${conv.articles.length} 条 →` }}</text>
@@ -343,6 +358,7 @@ export default {
       conv.loading = false
       conv.hasMore = articles.length > this.pageSize
       conv.displayArticles = articles.slice(0, this.pageSize)
+      conv.hasAI = articles.some(a => a.isAI)  // 标记是否有AI回答
       this.isLoading = false
       this.isFetching = true
       this.sourceUsed = conv.source
@@ -465,6 +481,12 @@ export default {
 
     openPrivacy() {
       uni.navigateTo({ url: '/pages/privacy/privacy' })
+    },
+
+    openAIWeb(keyword, provider) {
+      uni.navigateTo({
+        url: `/pages/aiweb/aiweb?keyword=${encodeURIComponent(keyword)}&provider=${provider}`
+      })
     },
 
     toggleSource(key) {
@@ -1061,5 +1083,51 @@ export default {
   font-size: 20rpx;
   color: #ccc;
   text-align: center;
+}
+
+/* ========== 搜索无结果 → AI 网页按钮 ========== */
+.empty-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40rpx 24rpx;
+}
+.empty-emoji {
+  font-size: 80rpx;
+  margin-bottom: 16rpx;
+}
+.empty-msg {
+  font-size: 28rpx;
+  color: #666;
+  margin-bottom: 8rpx;
+}
+.empty-sub {
+  font-size: 24rpx;
+  color: #999;
+  margin: 24rpx 0 20rpx;
+}
+.ai-web-btns {
+  display: flex;
+  gap: 20rpx;
+}
+.ai-web-btn {
+  padding: 20rpx 40rpx;
+  border-radius: 36rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+.deepseek {
+  background: #eef0ff;
+  color: #4d6bfe;
+  border: 2rpx solid #4d6bfe;
+}
+.doubao {
+  background: #fff5ee;
+  color: #e67e22;
+  border: 2rpx solid #e67e22;
+}
+.ai-web-btn:active {
+  transform: scale(0.95);
+  opacity: 0.8;
 }
 </style>
