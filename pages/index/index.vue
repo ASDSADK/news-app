@@ -7,7 +7,7 @@
         <text class="header-title">新闻速递</text>
       </view>
       <view class="header-right">
-        <text class="header-badge" v-if="activeKeyword && isFetching" @click="stopAllTracking">追踪中 · 点击停止</text>
+        <text class="header-badge" v-if="isLoading">搜索中...</text>
         <text class="header-icon" @click="showHistory = !showHistory">☰</text>
       </view>
     </view>
@@ -72,10 +72,6 @@
           <view class="message-bubble user-bubble">
             <text class="bubble-label">🔍 追踪关键词</text>
             <text class="bubble-keyword">{{ conv.keyword }}</text>
-            <view class="bubble-meta" v-if="conv.keyword === activeKeyword && isFetching">
-              <text class="meta-dot"></text>
-              <text class="meta-text">每10分钟自动刷新 · 下次 {{ nextRefreshTime }}</text>
-            </view>
           </view>
         </view>
 
@@ -159,9 +155,6 @@
                 <view class="action-btn" @click.stop="refreshConversation(conv.keyword)">
                   <text>🔄 刷新</text>
                 </view>
-                <view class="action-btn" @click.stop="stopTracking(conv.keyword)" v-if="conv.keyword === activeKeyword && isFetching">
-                  <text>⏹ 停止追踪</text>
-                </view>
               </view>
             </view>
           </view>
@@ -221,8 +214,6 @@ export default {
       activeKeyword: '',
       isFetching: false,
       isLoading: false,
-      nextRefreshTime: '',
-      timer: null,
       showHistory: false,
       scrollToId: '',
       sourceUsed: '',
@@ -258,7 +249,7 @@ export default {
     }
   },
   onUnload() {
-    this.stopAllTracking()
+    this.isFetching = false
   },
   methods: {
     // ========== 发送关键词 ==========
@@ -296,13 +287,6 @@ export default {
 
       this.scrollToBottom()
       this.fetchNewsForKeyword(kw)
-
-      // 开启定时刷新
-      if (this.timer) clearInterval(this.timer)
-      this.timer = setInterval(() => {
-        this.autoRefresh()
-      }, 10 * 60 * 1000)
-      this.updateNextRefreshTime()
     },
 
     // ========== 快捷搜索 ==========
@@ -366,25 +350,6 @@ export default {
       this.saveConversations()
     },
 
-    // ========== 自动刷新 ==========
-    async autoRefresh() {
-      if (!this.activeKeyword) return
-      // 定时刷新只用免费RSS，不消耗天行数据额度
-      const result = await fetchAllSources(this.activeKeyword, this.selectedSources)
-      if (result.articles.length > 0) {
-        const conv = this.conversations.find(c => c.keyword === this.activeKeyword)
-        if (conv) {
-          conv.articles = result.articles
-          conv.allNews = result.articles
-          conv.hasMore = result.articles.length > this.pageSize
-          conv.displayArticles = result.articles.slice(0, this.pageSize)
-          conv.source = result.source || result.sources.map(k => this.sources[k]?.label || k).join(' + ')
-          this.updateNextRefreshTime()
-          this.saveConversations()
-        }
-      }
-    },
-
     // ========== 加载更多 ==========
     loadMoreForConv(cIdx) {
       const conv = this.conversations[cIdx]
@@ -402,13 +367,6 @@ export default {
     // ========== 切换对话 ==========
     switchConversation(keyword) {
       this.showHistory = false
-      this.activeKeyword = keyword
-      this.isFetching = true
-      if (this.timer) clearInterval(this.timer)
-      this.timer = setInterval(() => {
-        this.autoRefresh()
-      }, 10 * 60 * 1000)
-      this.updateNextRefreshTime()
       this.scrollToBottom()
     },
 
@@ -424,21 +382,13 @@ export default {
     },
 
     // ========== 停止追踪 ==========
-    stopTracking(keyword) {
+    stopTracking() {
       this.isFetching = false
       this.activeKeyword = ''
-      if (this.timer) {
-        clearInterval(this.timer)
-        this.timer = null
-      }
     },
 
     stopAllTracking() {
       this.isFetching = false
-      if (this.timer) {
-        clearInterval(this.timer)
-        this.timer = null
-      }
     },
 
     // ========== 删除对话 ==========
@@ -513,11 +463,6 @@ export default {
       this.$nextTick(() => {
         this.scrollToId = 'scroll-bottom'
       })
-    },
-
-    updateNextRefreshTime() {
-      const t = new Date(Date.now() + 10 * 60 * 1000)
-      this.nextRefreshTime = `${t.getHours().toString().padStart(2, '0')}:${t.getMinutes().toString().padStart(2, '0')}`
     },
 
     formatTime(dateStr) {
