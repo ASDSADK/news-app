@@ -1,57 +1,73 @@
 /**
- * 新闻 API 工具模块（v3 — 百度搜索引擎版）
+ * 新闻 API 工具模块（v4 — Bing 搜索版）
+ *
+ * 2026-10 实测结论：
+ *   ✅ Bing 新闻 RSS  — 任意关键词精准搜索（主力）
+ *      https://www.bing.com/news/search?q=关键词&format=RSS
+ *   ✅ 人民网/中新网/界面新闻 RSS — 频道最新新闻（兜底）
+ *   ❌ 百度新闻抓取  — 返回"百度安全验证"反爬页
+ *   ❌ 搜狗/360/头条 — 结果 JS 渲染，HTML 无法解析
+ *   ❌ Google News   — 国内不可达
  *
  * 搜索策略：
- *   1. 云函数百度新闻搜索 → 任意关键词都能搜到（零配置、零成本）
- *   2. 本地RSS直连 → 定时刷新兜底（免费、无限制）
- *
- * 实测可用源：
- *   ✅ 百度新闻搜索   — 云函数端抓取解析（主力）
- *   ✅ 人民网 RSS     — politics.xml (100条)
- *   ✅ 新浪新闻 RSS   — ddt.xml
- *   ✅ 36氪 RSS       — /feed
+ *   1. 云函数（Bing + RSS + AI 兜底）
+ *   2. 本地直连（云函数不可用时）
  */
 
-const FEEDS = [
+const TIMEOUT = 20000
+
+// DeepSeek API Key（本地调试用，生产环境请配云函数环境变量）
+let LOCAL_DEEPSEEK_KEY = ''
+
+// ============================================================
+// 新闻源注册表
+// ============================================================
+
+const BING_SOURCE = {
+  key: 'bing',
+  name: 'Bing搜索',
+  label: 'Bing搜索',
+  icon: '🔎',
+  desc: '任意关键词精准搜索',
+  enabled: true
+}
+
+// 频道 RSS（实测可用的 https 源）
+const RSS_FEEDS = [
   {
     key: 'people',
     name: '人民网',
     icon: '🏛',
-    url: 'http://www.people.com.cn/rss/politics.xml',
+    url: 'https://www.people.com.cn/rss/politics.xml',
     desc: '时政要闻'
   },
   {
-    key: 'sina',
-    name: '新浪新闻',
-    icon: '📢',
-    url: 'https://rss.sina.com.cn/news/marquee/ddt.xml',
-    desc: '新闻要闻'
+    key: 'chinanews',
+    name: '中国新闻网',
+    icon: '📰',
+    url: 'https://www.chinanews.com.cn/rss/scroll-news.xml',
+    desc: '即时新闻'
   },
   {
-    key: '36kr',
-    name: '36氪',
-    icon: '🚀',
-    url: 'https://36kr.com/feed',
-    desc: '科技商业'
+    key: 'chinanews_fin',
+    name: '中新网财经',
+    icon: '💰',
+    url: 'https://www.chinanews.com.cn/rss/finance.xml',
+    desc: '财经新闻'
+  },
+  {
+    key: 'jiemian',
+    name: '界面新闻',
+    icon: '📈',
+    url: 'https://a.jiemian.com/index.php?m=article&a=rss',
+    desc: '商业财经'
   }
 ]
 
-const TIMEOUT = 15000
-
 // ============================================================
-// DeepSeek API Key（本地调试用，生产环境请用云函数环境变量）
-// 在此处填入你的 key 即可本地测试：sk-xxxxxxxxxxxxxxxx
-// ============================================================
-let LOCAL_DEEPSEEK_KEY = ''
-
-// ============================================================
-// 云函数搜索（精准关键词 + RSS 聚合）
+// 云函数搜索
 // ============================================================
 
-/**
- * 通过云函数搜索（百度新闻抓取 + 搜狗备用 + RSS 兜底）
- * 零配置、零成本、任意关键词都能搜
- */
 export async function fetchViaCloud(keyword) {
   return new Promise((resolve, reject) => {
     try {
@@ -59,13 +75,14 @@ export async function fetchViaCloud(keyword) {
         name: 'news-api',
         data: { action: 'search', keyword, pageSize: 50 },
         success: (res) => {
-          if (res.result?.code === 0 && res.result.data) {
-            const articles = res.result.data.articles.map(a => ({
+          if (res.result && res.result.code === 0 && res.result.data) {
+            const articles = (res.result.data.articles || []).map(a => ({
               title: a.title,
               link: a.link,
               pubDate: a.pubDate,
               source: a.source,
               description: a.description,
+              isAI: a.isAI || false,
               sourceKey: 'cloud',
               sourceName: a.sourceName || a.source || '搜索结果'
             }))
@@ -75,7 +92,7 @@ export async function fetchViaCloud(keyword) {
               source: res.result.data.source || '云函数搜索'
             })
           } else {
-            reject(new Error(res.result?.message || '云函数返回异常'))
+            reject(new Error((res.result && res.result.message) || '云函数返回异常'))
           }
         },
         fail: reject
@@ -87,110 +104,161 @@ export async function fetchViaCloud(keyword) {
 }
 
 // ============================================================
-// 主入口：多源聚合
+// 本地直连多源聚合（云函数不可用时的降级路径）
 // ============================================================
 
-/**
- * @param {string} keyword      搜索关键词
- * @param {string[]} sourceKeys 指定源 key 列表
- */
 export async function fetchAllSources(keyword, sourceKeys = null) {
-  const active = FEEDS.filter(f => {
-    if (sourceKeys && sourceKeys.length > 0) {
-      return sourceKeys.includes(f.key)
-    }
-    return f.enabled !== false
-  })
-
+  const useAll = !sourceKeys || sourceKeys.length === 0
   const all = []
   const usedSources = []
 
-  const results = await Promise.allSettled(
-    active.map(async (feed) => {
-      const articles = await fetchFeed(feed, keyword)
-      if (articles.length > 0) {
-        articles.forEach(a => {
-          a.sourceKey = feed.key
-          a.sourceName = feed.name
-        })
-        return { key: feed.key, name: feed.name, articles }
-      }
-      return { key: feed.key, name: feed.name, articles: [] }
+  const tasks = []
+
+  // Bing 搜索（任意关键词）
+  if (useAll || sourceKeys.includes('bing')) {
+    tasks.push(
+      fetchBingRSS(keyword)
+        .then(articles => ({ key: 'bing', name: 'Bing搜索', articles }))
+        .catch(() => ({ key: 'bing', name: 'Bing搜索', articles: [] }))
+    )
+  }
+
+  // 频道 RSS
+  RSS_FEEDS
+    .filter(f => useAll || sourceKeys.includes(f.key))
+    .forEach(feed => {
+      tasks.push(
+        fetchFeed(feed, keyword)
+          .then(articles => ({ key: feed.key, name: feed.name, articles }))
+          .catch(() => ({ key: feed.key, name: feed.name, articles: [] }))
+      )
     })
-  )
+
+  const results = await Promise.allSettled(tasks)
 
   for (const r of results) {
     if (r.status === 'fulfilled' && r.value.articles.length > 0) {
+      r.value.articles.forEach(a => {
+        a.sourceKey = r.value.key
+        if (!a.sourceName) a.sourceName = r.value.name
+      })
       all.push(...r.value.articles)
       usedSources.push(r.value.key)
     }
   }
 
-  // 链接去重 + 时间排序
+  // 链接去重
   const seen = new Set()
   const unique = all.filter(a => {
     if (seen.has(a.link)) return false
     seen.add(a.link)
     return true
   })
-  unique.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate))
 
   return { articles: unique, sources: usedSources }
 }
 
 // ============================================================
-// 抓取单个源
+// Bing 新闻 RSS（主力搜索源）
 // ============================================================
 
-async function fetchFeed(feed, keyword) {
-  let url = feed.url
+function fetchBingRSS(keyword) {
+  const url = `https://www.bing.com/news/search?q=${encodeURIComponent(keyword)}&format=RSS&mkt=zh-CN`
 
-  // Google News 特殊处理
-  if (feed.key === 'google') {
-    url = `https://news.google.com/rss/search?q=${encodeURIComponent(keyword)}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans`
-  }
-
-  if (!url) return []
-
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     uni.request({
       url,
       timeout: TIMEOUT,
       dataType: 'text',
+      header: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+      },
       success: (res) => {
         if (res.statusCode === 200 && res.data) {
-          const allArticles = parseRSS(res.data, keyword)
-          // 按关键词过滤（标题或摘要包含关键词）
-          if (keyword && feed.key !== 'google') {
-            const kw = keyword.toLowerCase()
-            const filtered = allArticles.filter(a =>
-              (a.title || '').toLowerCase().includes(kw) ||
-              (a.description || '').toLowerCase().includes(kw)
-            )
-            resolve(filtered.slice(0, 30))
-          } else {
-            resolve(allArticles.slice(0, 30))
-          }
+          resolve(parseBingRSS(res.data, keyword))
         } else {
-          resolve([])
+          reject(new Error(`Bing HTTP ${res.statusCode}`))
         }
+      },
+      fail: reject
+    })
+  })
+}
+
+/**
+ * 解析 Bing 新闻 RSS
+ * link 形如 ...apiclick.aspx?...&url=<真实URL编码>...
+ */
+function parseBingRSS(xml, keyword) {
+  const items = []
+  const itemRe = /<item>([\s\S]*?)<\/item>/gi
+  let m
+
+  while ((m = itemRe.exec(xml)) !== null) {
+    const block = m[1]
+    const title = extractTag(block, 'title')
+    const rawLink = extractTag(block, 'link')
+    const description = extractTag(block, 'description')
+    const pubDate = extractTag(block, 'pubDate')
+    const source = extractTag(block, 'News:Source')
+
+    if (!title || !rawLink) continue
+
+    // 提取真实 URL
+    let link = rawLink
+    const urlMatch = rawLink.match(/[?&]url=([^&]+)/)
+    if (urlMatch) {
+      try { link = decodeURIComponent(urlMatch[1]) } catch (e) { link = rawLink }
+    }
+
+    items.push({
+      title: cleanHTML(title),
+      link: cleanHTML(link),
+      pubDate,
+      source: cleanHTML(source) || domainOf(link),
+      description: cleanHTML(description).substring(0, 200),
+      keyword,
+      sourceName: 'Bing新闻'
+    })
+  }
+
+  return items
+}
+
+// ============================================================
+// 频道 RSS
+// ============================================================
+
+function fetchFeed(feed, keyword) {
+  return new Promise((resolve) => {
+    uni.request({
+      url: feed.url,
+      timeout: TIMEOUT,
+      dataType: 'text',
+      success: (res) => {
+        if (res.statusCode !== 200 || !res.data) return resolve([])
+        const kw = (keyword || '').toLowerCase()
+        const items = parseRSSItems(res.data, keyword)
+        resolve(
+          items.filter(a =>
+            (a.title || '').toLowerCase().includes(kw) ||
+            (a.description || '').toLowerCase().includes(kw)
+          ).slice(0, 30)
+        )
       },
       fail: () => resolve([])
     })
   })
 }
 
-// ============================================================
-// RSS 解析
-// ============================================================
-
-function parseRSS(xmlStr, keyword) {
+function parseRSSItems(xml, keyword) {
   const items = []
-  const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/gi
-  let match
+  const itemRe = /<item[^>]*>([\s\S]*?)<\/item>/gi
+  let m
 
-  while ((match = itemRegex.exec(xmlStr)) !== null) {
-    const block = match[1]
+  while ((m = itemRe.exec(xml)) !== null) {
+    const block = m[1]
     const title = extractTag(block, 'title')
     const link = extractTag(block, 'link')
     const pubDate = extractTag(block, 'pubDate')
@@ -201,9 +269,9 @@ function parseRSS(xmlStr, keyword) {
       items.push({
         title: cleanHTML(title),
         link: cleanHTML(link),
-        pubDate: pubDate || new Date().toISOString(),
-        source: cleanHTML(source) || extractSourceFromTitle(title),
-        description: cleanHTML(description || '').substring(0, 200),
+        pubDate,
+        source: cleanHTML(source) || '',
+        description: cleanHTML(description).substring(0, 200),
         keyword
       })
     }
@@ -211,10 +279,15 @@ function parseRSS(xmlStr, keyword) {
   return items
 }
 
+// ============================================================
+// 工具函数
+// ============================================================
+
 function extractTag(block, tag) {
+  const esc = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const patterns = [
-    new RegExp(`<${tag}[^>]*><!\\[CDATA\\[(.*?)\\]\\]></${tag}>`, 'i'),
-    new RegExp(`<${tag}[^>]*>(.*?)</${tag}>`, 'i')
+    new RegExp(`<${esc}[^>]*><!\\[CDATA\\[(.*?)\\]\\]></${esc}>`, 'i'),
+    new RegExp(`<${esc}[^>]*>(.*?)</${esc}>`, 'i')
   ]
   for (const p of patterns) {
     const m = p.exec(block)
@@ -224,20 +297,22 @@ function extractTag(block, tag) {
 }
 
 function cleanHTML(str) {
+  if (!str) return ''
   return str
     .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
 }
 
-function extractSourceFromTitle(title) {
-  const match = title.match(/\s*[-—|]\s*([^\-—|]+)$/)
-  return match ? match[1].trim() : ''
+function domainOf(url) {
+  try {
+    const m = url.match(/https?:\/\/([^\/]+)/)
+    return m ? m[1].replace('www.', '') : ''
+  } catch (e) {
+    return ''
+  }
 }
 
 // ============================================================
@@ -246,20 +321,27 @@ function extractSourceFromTitle(title) {
 
 export function getSources() {
   const map = {}
-  FEEDS.forEach(f => {
+  map[BING_SOURCE.key] = {
+    name: BING_SOURCE.name,
+    label: BING_SOURCE.label,
+    icon: BING_SOURCE.icon,
+    desc: BING_SOURCE.desc,
+    enabled: true
+  }
+  RSS_FEEDS.forEach(f => {
     map[f.key] = {
       name: f.name,
       label: f.name,
       icon: f.icon,
       desc: f.desc,
-      enabled: f.enabled !== false
+      enabled: true
     }
   })
   return map
 }
 
 export function getEnabledSources() {
-  return FEEDS.filter(f => f.enabled !== false).map(f => f.key)
+  return [BING_SOURCE.key, ...RSS_FEEDS.map(f => f.key)]
 }
 
 export function formatPubTime(dateStr) {
@@ -283,4 +365,12 @@ export function setDeepSeekKey(key) {
   LOCAL_DEEPSEEK_KEY = key
 }
 
-export default { fetchAllSources, getSources, getEnabledSources, formatPubTime, cleanTitle, setDeepSeekKey }
+export default {
+  fetchViaCloud,
+  fetchAllSources,
+  getSources,
+  getEnabledSources,
+  formatPubTime,
+  cleanTitle,
+  setDeepSeekKey
+}
