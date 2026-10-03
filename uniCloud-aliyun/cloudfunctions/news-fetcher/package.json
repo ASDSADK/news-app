@@ -1,18 +1,11 @@
 {
   "name": "news-fetcher",
-  "version": "1.0.0",
-  "description": "新闻定时抓取云函数 - 每10分钟自动获取Google News RSS新闻",
+  "version": "1.0.1",
+  "description": "新闻抓取云函数 - 已移除定时触发器（不再自动执行）",
   "main": "index.js",
   "dependencies": {},
   "cloudfunction-config": {
     "memorySize": 256,
-    "timeout": 60,
-    "triggers": [
-      {
-        "name": "newsTimer",
-        "type": "timer",
-        "config": "0 */10 * * * * *"
-      }
-    ]
+    "timeout": 60
   }
 }

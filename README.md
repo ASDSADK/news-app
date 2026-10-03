@@ -69,11 +69,13 @@ news-app/
 4. 右键 `uniCloud-aliyun/cloudfunctions/news-fetcher/` → 上传部署
 5. 右键 `uniCloud-aliyun/cloudfunctions/news-api/` → 上传部署
 
-### 4. 配置定时触发器
+### 4. 定时触发器（已移除）
 
-部署 `news-fetcher` 云函数后，定时触发器会自动生效（`package.json` 中已配置 `0 */10 * * * * *`）。
+`news-fetcher` 的定时触发器**已移除**，不再自动执行。
 
-如需修改触发间隔，编辑 `news-fetcher/package.json` 中的 `cloudfunction-config.triggers.config`。
+原配置为每 10 分钟跑一次，即使不打开 App 也会持续消耗云函数额度（约 4320 次/月），因此已关闭。
+
+现在搜索完全由用户手动触发，走 `news-api` 云函数，不做任何后台轮询。
 
 ### 5. （可选）配置 GNews 备用源
 

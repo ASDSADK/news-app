@@ -2,16 +2,17 @@
 
 // ============================================================
 // 新闻抓取云函数 - news-fetcher
-// 定时触发器：每10分钟执行一次
-// 主力新闻源：Google News RSS（免费无限）
-// 备用新闻源：GNews API（免费版每天100次）
+//
+// ⚠️ 定时触发器已移除（2026-10）
+//    原因：客户端不再使用本函数，定时器会持续消耗云函数额度
+//    本函数现仅支持手动调用，不会自动执行
 // ============================================================
 
 const db = uniCloud.database()
 
 /**
- * 定时云函数入口
- * 触发配置在 package.json 的 cloudfunction-config.triggers 中
+ * 云函数入口（手动调用）
+ * 定时触发配置已从 package.json 中移除
  */
 exports.main = async (event, context) => {
   console.log('[news-fetcher] 定时任务触发:', new Date().toISOString())
